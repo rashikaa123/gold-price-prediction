@@ -15,7 +15,7 @@ st.title("💰 Gold Price Prediction App")
 # PART 1 — SHORT TERM GOLD PREDICTION (ML MODEL)
 # -------------------------------------------------------
 
-st.header("🔍 Predict Gold Price Using ML Model (Short-Term)")
+st.header("Predict Gold Price Using ML Model")
 st.write("Enter financial indicators below:")
 
 inputs = {}
