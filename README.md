@@ -1,20 +1,24 @@
-# Gold Price Prediction
-This repository contains a **Machine Learning–based Gold Price Prediction Web App** built using **Python, Streamlit, and Random Forest Regressor**.
+# 💰 Gold Price Prediction App
 
-### 🔹 What’s inside this repo?
+A Machine Learning-based web app that predicts gold price trends based on year.
 
-* **app.py** → Main Streamlit web application
-* **gold_model.joblib** → Trained ML model
-* **scaler.joblib** → StandardScaler used for preprocessing
-* **feature_cols.joblib** → Feature list used for model input
-* **gld_price_data.csv** → Dataset (SPX, USO, SLV, EUR/USD, GLD)
-* **requirements.txt** → All required libraries
-* **README.md** → Project documentation
+## Live Demo
+https://your-streamlit-link.streamlit.app
 
-### 🔹 What the project does?
+## Features
+- Predict gold prices for any year
+- Compare prices between years
+- Visualize trends with graphs
+- Download PDF report
 
-* Predicts **short-term gold prices** using Machine Learning
-* Predicts **future gold prices** using CAGR
-* Accepts **user input**
-* Generates **charts and PDF reports**
-* Fully deployed using **Streamlit Cloud**
+## Tech Stack
+- Python
+- Streamlit
+- Scikit-learn
+- Pandas, NumPy, Matplotlib
+
+## Project Structure
+- app.py → main Streamlit app
+- gold_model_new.joblib → trained ML model
+- gold_data.csv → dataset
+- requirements.txt → dependencies
