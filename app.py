@@ -1,4 +1,3 @@
-# app.py — Upgraded Gold Price App (Year-based model + visuals + PDF report)
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -7,211 +6,189 @@ import datetime
 import matplotlib.pyplot as plt
 from io import BytesIO
 from fpdf import FPDF
+import tempfile
+from sklearn.metrics import r2_score, mean_squared_error
 
-# ------------------ Page config / UI --------------------
-st.set_page_config(page_title="Gold Price Predictor (Year)", layout="wide", initial_sidebar_state="expanded")
-st.title("💰 Gold Price Prediction (India) — Year-based")
+# ------------------ Page config --------------------
+st.set_page_config(page_title="Gold Price Predictor", layout="wide")
+st.title("💰 Gold Price Prediction — Year-based")
 
-st.markdown(
-    """
-This app predicts gold price (INR per 10 grams) for any year using a trend-based ML model.
-- Enter a year (past/present/future) to get prediction.
-- View historical data, compare years, download a PDF report, and explore ML info.
-"""
-)
+st.markdown("Predict gold price trends using historical data (India).")
 
-# ------------------ Load dataset & model --------------------
+# ------------------ Load data --------------------
 @st.cache_data
-def load_data(csv_path="year_gold_data.csv"):
-    df = pd.read_csv(csv_path)
-    # Ensure Year column numeric
-    df['Year'] = df['Year'].astype(int)
+def load_data():
+    df = pd.read_csv("gold_data.csv")
+    df['Date'] = pd.to_datetime(df['Date'])
+    df['Year'] = df['Date'].dt.year
+    df = df.rename(columns={'Close': 'Gold_Price'})
+    df = df.groupby('Year')['Gold_Price'].mean().reset_index()
     df = df.sort_values('Year').reset_index(drop=True)
     return df
 
 @st.cache_resource
-def load_model(path="gold_year_model.joblib"):
-    return joblib.load(path)
+def load_model():
+    return joblib.load("gold_model_new.joblib")
 
 try:
-    df = load_data("year_gold_data.csv")
-except Exception as e:
-    st.error("Could not load dataset 'year_gold_data.csv'. Make sure the file exists in the repo root.")
+    df = load_data()
+    model = load_model()
+except:
+    st.error("❌ Missing dataset or model file.")
     st.stop()
 
-try:
-    model = load_model("gold_year_model.joblib")
-except Exception as e:
-    st.error("Could not load model 'gold_year_model.joblib'. Make sure the file exists in the repo root.")
-    st.stop()
+# ------------------ Sidebar --------------------
+st.sidebar.header("Settings")
 
-# ------------------ Sidebar: options --------------------
-st.sidebar.header("Settings & Options")
 current_year = datetime.datetime.now().year
 min_year = int(df['Year'].min())
 max_year = max(current_year, int(df['Year'].max()) + 10)
 
-target_year = st.sidebar.number_input("Enter target year", min_value=1900, max_value=2100, value=current_year)
-horizon = st.sidebar.slider("Plot future up to year", min_value=int(df['Year'].max()), max_value=max_year, value=max(target_year, int(df['Year'].max())+5))
-show_table = st.sidebar.checkbox("Show dataset table", value=True)
-compare_mode = st.sidebar.checkbox("Enable Compare Years", value=False)
-download_pdf = st.sidebar.checkbox("Show PDF report button", value=True)
+target_year = st.sidebar.number_input("Target Year", min_value=1900, max_value=2100, value=current_year)
+horizon = st.sidebar.slider("Future Range", min_value=int(df['Year'].max()), max_value=max_year, value=max(target_year, int(df['Year'].max()) + 5))
 
-# ------------------ Helper: predict a list of years --------------------
-def predict_years(year_list):
-    arr = np.array(year_list).reshape(-1, 1)
-    preds = model.predict(arr)
-    return preds
+show_table = st.sidebar.checkbox("Show Dataset", True)
+compare_mode = st.sidebar.checkbox("Compare Years")
+download_pdf = st.sidebar.checkbox("Enable PDF Report")
 
-# ------------------ Build combined series: historical + predicted --------------------
+# ------------------ Prediction function --------------------
+def predict_years(years):
+    return model.predict(np.array(years).reshape(-1, 1))
+
+# ------------------ Build predictions --------------------
 hist_years = df['Year'].tolist()
-hist_prices = df['Gold_Price_INR'].tolist()
-# Determine full range for plotting: from first historical to user-specified horizon
-plot_years = list(range(min_year, horizon+1))
+plot_years = list(range(min_year, horizon + 1))
+
+# vectorized prediction (FAST)
+all_preds = predict_years(plot_years)
+
 pred_prices = []
-for y in plot_years:
+for i, y in enumerate(plot_years):
     if y in hist_years:
-        pred_prices.append(float(df.loc[df['Year']==y, 'Gold_Price_INR'].values[0]))
+        val = df.loc[df['Year'] == y, 'Gold_Price'].values[0]
     else:
-        # predict with model
-        pred_prices.append(float(predict_years([y])[0]))
+        val = all_preds[i]
+    pred_prices.append(float(val))
 
-# ------------------ Layout: Left column (controls + prediction) --------------------
-left_col, right_col = st.columns([1, 2])
+# ------------------ Layout --------------------
+left, right = st.columns([1, 2])
 
-with left_col:
-    st.subheader("🔢 Single Year Prediction")
-    st.write(f"Predict gold price in India for any year (data trained on {min_year}–{int(df['Year'].max())}).")
-    st.write("Enter a year and click Predict.")
-    input_year = st.number_input("Year to predict", min_value=min_year, max_value=2100, value=target_year)
-    if st.button("Predict Price"):
-        pred_val = float(predict_years([input_year])[0])
-        # Classification: define tertiles based on historical distribution
-        q1, q2 = np.percentile(df['Gold_Price_INR'].values, [33, 66])
-        if pred_val <= q1:
-            label = "Low"
-            color = "green"
-        elif pred_val <= q2:
-            label = "Medium"
-            color = "orange"
+# ------------------ LEFT --------------------
+with left:
+    st.subheader("🔢 Predict Year")
+
+    input_year = st.number_input("Enter Year", min_value=min_year, max_value=2100, value=target_year)
+
+    if st.button("Predict"):
+        pred = float(predict_years([input_year])[0])
+
+        q1, q2 = np.percentile(df['Gold_Price'], [33, 66])
+
+        if pred <= q1:
+            label, color = "Low", "green"
+        elif pred <= q2:
+            label, color = "Medium", "orange"
         else:
-            label = "High"
-            color = "red"
-        st.markdown(f"### 🎯 Predicted Gold Price for **{input_year}**: ₹{pred_val:,.2f} per 10g")
-        st.markdown(f"**Category:** {label}")
+            label, color = "High", "red"
+
+        st.markdown(f"### 🎯 ₹{pred:,.2f} per 10g")
+        st.markdown(f"**Category:** :{color}[{label}]")
 
     st.markdown("---")
-    # Compare Years
+
+    # Compare Mode
     if compare_mode:
-        st.subheader("🔎 Compare Two Years")
-        year1 = st.number_input("Year 1", min_value=min_year, max_value=2100, value=int(df['Year'].max())-1, key="c1")
-        year2 = st.number_input("Year 2", min_value=min_year, max_value=2100, value=int(df['Year'].max()), key="c2")
+        st.subheader("🔎 Compare Years")
+
+        y1 = st.number_input("Year 1", value=min_year + 1)
+        y2 = st.number_input("Year 2", value=min_year + 2)
+
         if st.button("Compare"):
-            price1 = float(predict_years([year1])[0])
-            price2 = float(predict_years([year2])[0])
-            diff = price2 - price1
-            pct = (diff/price1)*100 if price1 != 0 else np.nan
-            st.write(f"Price in {year1}: ₹{price1:,.2f} per 10g")
-            st.write(f"Price in {year2}: ₹{price2:,.2f} per 10g")
+            p1 = float(predict_years([y1])[0])
+            p2 = float(predict_years([y2])[0])
+
+            diff = p2 - p1
+            pct = (diff / p1) * 100 if p1 != 0 else 0
+
+            st.write(f"{y1}: ₹{p1:,.2f}")
+            st.write(f"{y2}: ₹{p2:,.2f}")
             st.write(f"Difference: ₹{diff:,.2f} ({pct:.2f}%)")
 
     st.markdown("---")
-    # Model info
-    st.subheader("📊 Model Info")
-    # Compute R2 on historical data
-    X_hist = df[['Year']].values
-    y_hist = df['Gold_Price_INR'].values
-    try:
-        y_pred_hist = model.predict(X_hist)
-        from sklearn.metrics import r2_score, mean_squared_error
-        r2 = r2_score(y_hist, y_pred_hist)
-        mse = mean_squared_error(y_hist, y_pred_hist)
-        st.write(f"Model type: {type(model).__name__}")
-        st.write(f"Training R²: {r2:.4f}")
-        st.write(f"Training RMSE: {np.sqrt(mse):.2f}")
-    except Exception:
-        st.write("Model info: unable to compute metrics.")
 
-# ------------------ Right column: Graph + dataset table --------------------
-with right_col:
-    st.subheader("📈 Historical Data & Model Predictions")
+    # Model Info
+    st.subheader("📊 Model Info")
+
+    y_pred = model.predict(df[['Year']])
+    r2 = r2_score(df['Gold_Price'], y_pred)
+    rmse = np.sqrt(mean_squared_error(df['Gold_Price'], y_pred))
+
+    st.write(f"Model: {type(model).__name__}")
+    st.write(f"R² Score: {r2:.4f}")
+    st.write(f"RMSE: {rmse:.2f}")
+
+# ------------------ RIGHT --------------------
+with right:
+    st.subheader("📈 Trends")
+
     fig, ax = plt.subplots(figsize=(10, 5))
-    # Plot historical points
-    ax.plot(df['Year'], df['Gold_Price_INR'], marker='o', linestyle='-', label='Historical (actual)', color='#1f77b4')
-    # Plot model predictions (entire plot_years)
-    ax.plot(plot_years, pred_prices, marker='', linestyle='--', label='Model prediction', color='#ff7f0e')
-    # Highlight the user-selected input year if within range
+
+    ax.plot(df['Year'], df['Gold_Price'], marker='o', label='Historical')
+    ax.plot(plot_years, pred_prices, linestyle='--', label='Prediction')
+
     if input_year in plot_years:
-        ysel = float(predict_years([input_year])[0]) if input_year not in hist_years else float(df.loc[df['Year']==input_year, 'Gold_Price_INR'].values[0])
-        ax.scatter([input_year], [ysel], color='green', s=100, zorder=5, label=f'Prediction for {input_year}')
+        val = float(predict_years([input_year])[0])
+        ax.scatter(input_year, val, s=100)
+
     ax.set_xlabel("Year")
-    ax.set_ylabel("Gold Price (INR per 10g)")
-    ax.grid(alpha=0.2)
+    ax.set_ylabel("Gold Price (₹)")
     ax.legend()
+    ax.grid(alpha=0.3)
+
     st.pyplot(fig)
 
-    # Show dataset table if user wants
     if show_table:
-        st.subheader("📚 Dataset (Year vs Price)")
-        st.dataframe(df.style.format({"Gold_Price_INR":"{:,}"}), height=300)
+        st.subheader("Dataset")
+        st.dataframe(df)
 
-# ------------------ PDF Report generation --------------------
-def create_pdf_report(year_requested):
-    # Generate chart image PNG in-memory
-    buf = BytesIO()
-    fig.savefig(buf, format='png', bbox_inches='tight')
-    buf.seek(0)
+# ------------------ PDF --------------------
+def create_pdf(year):
+    pred = float(predict_years([year])[0])
 
-    # Prepare textual contents
-    pred_for_year = float(predict_years([year_requested])[0])
-    q1, q2 = np.percentile(df['Gold_Price_INR'].values, [33, 66])
-    if pred_for_year <= q1:
-        label = "Low"
-    elif pred_for_year <= q2:
-        label = "Medium"
-    else:
-        label = "High"
+    y_pred = model.predict(df[['Year']])
+    r2 = r2_score(df['Gold_Price'], y_pred)
+    rmse = np.sqrt(mean_squared_error(df['Gold_Price'], y_pred))
 
-    # Build PDF using fpdf
     pdf = FPDF()
     pdf.add_page()
+
     pdf.set_font("Arial", "B", 16)
-    pdf.cell(0, 10, "Gold Price Prediction Report", ln=True, align="C")
-    pdf.ln(5)
+    pdf.cell(0, 10, "Gold Price Report", ln=True, align="C")
 
     pdf.set_font("Arial", size=12)
-    pdf.cell(0, 8, f"Requested Year: {year_requested}", ln=True)
-    pdf.cell(0, 8, f"Predicted Price (INR per 10g): ₹{pred_for_year:,.2f}", ln=True)
-    pdf.cell(0, 8, f"Category: {label}", ln=True)
     pdf.ln(5)
-    pdf.cell(0, 8, "Model Info:", ln=True)
-    pdf.set_font("Arial", size=10)
-    try:
-        pdf.cell(0, 6, f"Training R2: {r2:.4f}", ln=True)
-        pdf.cell(0, 6, f"Training RMSE: {np.sqrt(mse):.2f}", ln=True)
-    except Exception:
-        pdf.cell(0, 6, "Training metrics: N/A", ln=True)
-    pdf.ln(5)
+    pdf.cell(0, 8, f"Year: {year}", ln=True)
+    pdf.cell(0, 8, f"Predicted Price: ₹{pred:,.2f}", ln=True)
+    pdf.cell(0, 8, f"R2 Score: {r2:.4f}", ln=True)
+    pdf.cell(0, 8, f"RMSE: {rmse:.2f}", ln=True)
 
-    # Save chart image to a temp file (fpdf needs a path)
-    img_path = "/tmp/gold_plot.png"
-    with open(img_path, "wb") as f:
-        f.write(buf.getbuffer())
+    # Save plot temp
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+    fig.savefig(tmp.name)
 
-    # Insert the image
-    pdf.image(img_path, x=10, y=None, w=190)
-    # Output PDF to bytes
-    pdf_buf = pdf.output(dest="S").encode("latin-1")
-    return pdf_buf
+    pdf.image(tmp.name, w=180)
 
+    return pdf.output(dest="S").encode("latin-1")
+
+# ------------------ Download --------------------
 if download_pdf:
     st.sidebar.markdown("---")
-    st.sidebar.subheader("📄 Download PDF Report")
-    pdf_year = st.sidebar.number_input("PDF report year", min_value=min_year, max_value=2100, value=int(current_year), step=1)
-    if st.sidebar.button("Generate & Download PDF"):
-        pdf_bytes = create_pdf_report(int(pdf_year))
-        st.sidebar.download_button("Download Report (PDF)", data=pdf_bytes, file_name=f"gold_report_{pdf_year}.pdf", mime="application/pdf")
+    pdf_year = st.sidebar.number_input("PDF Year", value=current_year)
 
-# ------------------ Footer / tips --------------------
+    if st.sidebar.button("Generate PDF"):
+        pdf_bytes = create_pdf(int(pdf_year))
+        st.sidebar.download_button("Download", pdf_bytes, file_name="report.pdf")
+
+# ------------------ Footer --------------------
 st.markdown("---")
-st.info("Tips: Use the slider to extend future plotting range. The model is trained on historical data and extrapolates trends; long-term predictions are indicative, not guaranteed.")
+st.info("⚠️ Predictions are trend-based and not guaranteed for long-term future.")
