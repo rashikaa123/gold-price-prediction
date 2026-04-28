@@ -3,8 +3,7 @@
 A Machine Learning-based web app that predicts gold price trends based on year.
 
 ## Live Demo
-https://your-streamlit-link.streamlit.app
-
+https://gold-price-prediction-4ef9odfmmmxvqztedfh7fn.streamlit.app/
 ## Features
 - Predict gold prices for any year
 - Compare prices between years
