@@ -27,7 +27,7 @@ h1, h2, h3 {
 </style>
 """, unsafe_allow_html=True)
 
-st.title("💰 Gold Price Prediction App")
+st.title("💰 Gold Price Prediction")
 
 # ---------------- LOAD DATA ----------------
 @st.cache_data
